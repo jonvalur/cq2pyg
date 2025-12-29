@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 uv sync --python 3.11                # Install (requires Python 3.10-3.12)
-uv run pytest src/cq2pyg/tests/ -v   # Run all tests
+uv run pytest tests/ -v              # Run all tests
 ```
 
 Use `/test` for convenient test running with options.

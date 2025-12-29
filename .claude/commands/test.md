@@ -18,7 +18,7 @@ Run the test suite using uv and pytest.
 ## Command
 
 ```bash
-uv run pytest src/cq2pyg/tests/test_converter.py $ARGUMENTS -v
+uv run pytest tests/test_converter.py $ARGUMENTS -v
 ```
 
 If no arguments provided, run all tests with verbose output.

@@ -13,7 +13,7 @@ Use this skill when:
 ## Testing Framework
 
 - **Runner:** pytest via `uv run pytest`
-- **Location:** `src/cq2pyg/tests/test_converter.py`
+- **Location:** `tests/test_converter.py`
 - **Style:** Class-based test organization with descriptive docstrings
 
 ## Test Structure
@@ -122,16 +122,16 @@ Description of category:
 
 ```bash
 # All tests
-uv run pytest src/cq2pyg/tests/test_converter.py -v
+uv run pytest tests/test_converter.py -v
 
 # Specific class
-uv run pytest src/cq2pyg/tests/test_converter.py::TestClassName -v
+uv run pytest tests/test_converter.py::TestClassName -v
 
 # Specific test
-uv run pytest src/cq2pyg/tests/test_converter.py::TestClassName::test_name -v
+uv run pytest tests/test_converter.py::TestClassName::test_name -v
 
 # Pattern matching
-uv run pytest src/cq2pyg/tests/test_converter.py -k "pattern" -v
+uv run pytest tests/test_converter.py -k "pattern" -v
 ```
 
 ## CadQuery Tips
