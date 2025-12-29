@@ -34,8 +34,8 @@ class TopologyData:
 
 
 def _shape_hash(shape: TopoDS_Shape) -> int:
-    """Get a unique hash for a TopoDS_Shape using its TShape pointer."""
-    return shape.IsPartner.__self__.HashCode(2147483647)
+    """Get a unique hash for a TopoDS_Shape based on its underlying TShape."""
+    return shape.HashCode(2147483647)
 
 
 def extract_topology(shape: TopoDS_Shape) -> TopologyData:

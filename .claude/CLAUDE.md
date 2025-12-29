@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-uv sync --python 3.11                # Install (requires Python 3.10-3.12)
+uv sync --python 3.11 --all-extras   # Install with dev deps (Python 3.10-3.12)
 uv run pytest tests/ -v              # Run all tests
 ```
 
