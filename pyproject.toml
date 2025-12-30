@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Convert CadQuery B-Rep objects to PyTorch Geometric graphs"
 requires-python = ">=3.10,<3.13"
 dependencies = [
-    "cadquery>=2.4.0",
+    "cadquery>=2.5.0",
     "torch>=2.0.0",
     "torch_geometric>=2.4.0",
 ]
