@@ -35,7 +35,7 @@ class TopologyData:
 
 def _shape_hash(shape: TopoDS_Shape) -> int:
     """Get a unique hash for a TopoDS_Shape based on its underlying TShape."""
-    return shape.HashCode(2147483647)
+    return hash(shape)
 
 
 def extract_topology(shape: TopoDS_Shape) -> TopologyData:
