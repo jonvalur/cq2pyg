@@ -784,6 +784,195 @@ class TestSimpleConverter:
         for a, b in list(edges_set):
             assert (b, a) in edges_set, f"Missing reverse edge ({b}, {a})"
 
+    def test_simple_cone(self):
+        """Test simple converter on a cone."""
+        cone = (
+            cq.Workplane("XZ")
+            .moveTo(0, 0)
+            .lineTo(5, 0)
+            .lineTo(0, 10)
+            .close()
+            .revolve(360)
+        )
+        data = cadquery_to_pyg_simple(cone)
+        assert data['face'].x.shape[0] > 0
+        assert 'control_point' not in data.node_types
+
+    def test_simple_torus(self):
+        """Test simple converter on a torus."""
+        torus = (
+            cq.Workplane("XZ")
+            .center(10, 0)
+            .circle(3)
+            .revolve(360, (0, 0, 0), (0, 0, 1))
+        )
+        data = cadquery_to_pyg_simple(torus)
+        assert data['face'].x.shape[0] == 1
+        assert 'control_point' not in data.node_types
+
+    def test_simple_union(self):
+        """Test simple converter on union of boxes."""
+        box1 = cq.Workplane("XY").box(10, 10, 10)
+        box2 = cq.Workplane("XY").center(5, 0).box(10, 10, 10)
+        union = box1.union(box2)
+        data = cadquery_to_pyg_simple(union)
+
+        assert data['face'].x.shape[0] >= 6
+        assert data['vertex'].x.shape[0] > 0
+        assert 'control_point' not in data.node_types
+
+    def test_simple_difference(self):
+        """Test simple converter on difference (hole in box)."""
+        box = cq.Workplane("XY").box(20, 20, 20)
+        hole = box.faces(">Z").workplane().hole(5)
+        data = cadquery_to_pyg_simple(hole)
+
+        face_types = data['face'].x[:, :NUM_SURFACE_TYPES].argmax(dim=1)
+        has_cylinder = (face_types == SurfaceType.CYLINDER).any()
+        assert has_cylinder
+        assert 'control_point' not in data.node_types
+
+    def test_simple_chamfer(self):
+        """Test simple converter on chamfered box."""
+        box = cq.Workplane("XY").box(10, 10, 10).edges().chamfer(1)
+        data = cadquery_to_pyg_simple(box)
+
+        assert data['face'].x.shape[0] > 6
+        assert 'control_point' not in data.node_types
+
+    def test_simple_compound(self):
+        """Test simple converter on compound shape."""
+        box1 = cq.Workplane("XY").box(5, 5, 5).val()
+        box2 = cq.Workplane("XY").center(20, 0).box(5, 5, 5).val()
+        compound = cq.Compound.makeCompound([box1, box2])
+        data = cadquery_to_pyg_simple(compound)
+
+        assert data['vertex'].x.shape[0] == 16
+        assert data['face'].x.shape[0] == 12
+        assert 'control_point' not in data.node_types
+
+    def test_simple_shell(self):
+        """Test simple converter on shell (hollow box)."""
+        shell = cq.Workplane("XY").box(10, 10, 10).shell(-1)
+        data = cadquery_to_pyg_simple(shell)
+
+        assert data['face'].x.shape[0] > 6
+        assert 'control_point' not in data.node_types
+
+    def test_simple_wedge(self):
+        """Test simple converter on wedge shape."""
+        wedge = cq.Workplane("XY").polygon(3, 10).extrude(10)
+        data = cadquery_to_pyg_simple(wedge)
+
+        assert data['face'].x.shape[0] == 5
+        assert data['vertex'].x.shape[0] == 6
+        assert 'control_point' not in data.node_types
+
+    def test_simple_feature_dimensions(self):
+        """Test that feature dimensions are correct in simple output."""
+        box = cq.Workplane("XY").box(10, 10, 10)
+        data = cadquery_to_pyg_simple(box)
+
+        assert data['vertex'].x.shape[1] == VERTEX_FEATURE_DIM
+        assert data['edge'].x.shape[1] == EDGE_FEATURE_DIM
+        assert data['face'].x.shape[1] == FACE_FEATURE_DIM
+
+    def test_simple_box_vertex_coordinates(self):
+        """Test that box vertices have correct coordinates in simple output."""
+        size = 10
+        box = cq.Workplane("XY").box(size, size, size)
+        data = cadquery_to_pyg_simple(box)
+
+        vertices = data['vertex'].x
+        assert vertices.min() >= -size / 2 - 0.001
+        assert vertices.max() <= size / 2 + 0.001
+
+    def test_simple_cylinder_radius(self):
+        """Test that cylinder has correct radius in simple output."""
+        radius = 5.0
+        height = 10.0
+        cylinder = cq.Workplane("XY").cylinder(height, radius)
+        data = cadquery_to_pyg_simple(cylinder)
+
+        face_types = data['face'].x[:, :NUM_SURFACE_TYPES].argmax(dim=1)
+        cyl_idx = (face_types == SurfaceType.CYLINDER).nonzero()[0][0]
+
+        radius_idx = NUM_SURFACE_TYPES + 21
+        stored_radius = data['face'].x[cyl_idx, radius_idx].item()
+        assert abs(stored_radius - radius) < 0.001
+
+    def test_simple_sphere_radius(self):
+        """Test that sphere has correct radius in simple output."""
+        radius = 7.5
+        sphere = cq.Workplane("XY").sphere(radius)
+        data = cadquery_to_pyg_simple(sphere)
+
+        face_types = data['face'].x[:, :NUM_SURFACE_TYPES].argmax(dim=1)
+        sphere_idx = (face_types == SurfaceType.SPHERE).nonzero()[0][0]
+
+        radius_idx = NUM_SURFACE_TYPES + 21
+        stored_radius = data['face'].x[sphere_idx, radius_idx].item()
+        assert abs(stored_radius - radius) < 0.001
+
+    def test_simple_face_orientation(self):
+        """Test that face orientation is stored in simple output."""
+        box = cq.Workplane("XY").box(10, 10, 10)
+        data = cadquery_to_pyg_simple(box)
+
+        orientations = data['face'].x[:, NUM_SURFACE_TYPES]
+        assert ((orientations == 1) | (orientations == -1)).all()
+
+    def test_simple_edge_orientation(self):
+        """Test that edge orientation is stored in simple output."""
+        box = cq.Workplane("XY").box(10, 10, 10)
+        data = cadquery_to_pyg_simple(box)
+
+        orientations = data['edge'].x[:, NUM_CURVE_TYPES]
+        assert ((orientations == 1) | (orientations == -1)).all()
+
+    def test_simple_plane_normals(self):
+        """Test that plane normals are unit vectors in simple output."""
+        box = cq.Workplane("XY").box(10, 10, 10)
+        data = cadquery_to_pyg_simple(box)
+
+        face_types = data['face'].x[:, :NUM_SURFACE_TYPES].argmax(dim=1)
+        plane_mask = face_types == SurfaceType.PLANE
+
+        normal_start = NUM_SURFACE_TYPES + 9
+        normals = data['face'].x[plane_mask, normal_start:normal_start + 3]
+
+        for i in range(normals.shape[0]):
+            normal = normals[i]
+            length = torch.norm(normal)
+            if length > 0.001:
+                assert abs(length - 1.0) < 0.01, f"Normal {i} has length {length}"
+
+    def test_simple_circle_radius(self):
+        """Test that circle edges have correct radius in simple output."""
+        radius = 5.0
+        cylinder = cq.Workplane("XY").cylinder(10, radius)
+        data = cadquery_to_pyg_simple(cylinder)
+
+        edge_types = data['edge'].x[:, :NUM_CURVE_TYPES].argmax(dim=1)
+        circle_mask = edge_types == CurveType.CIRCLE
+
+        if circle_mask.any():
+            radius_idx = NUM_CURVE_TYPES + 14
+            circle_radii = data['edge'].x[circle_mask, radius_idx]
+            assert torch.allclose(circle_radii, torch.tensor(radius), atol=0.001)
+
+    def test_simple_box_face_adjacency_count(self):
+        """Test that box has correct face adjacency count in simple output."""
+        box = cq.Workplane("XY").box(10, 10, 10)
+        data = cadquery_to_pyg_simple(box)
+
+        f_f_idx = data['face', 'adjacent', 'face'].edge_index
+        num_faces = data['face'].x.shape[0]
+
+        for face_idx in range(num_faces):
+            adjacent_count = (f_f_idx[0] == face_idx).sum()
+            assert adjacent_count == 4, f"Face {face_idx} has {adjacent_count} adjacent faces"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
