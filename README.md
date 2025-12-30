@@ -12,11 +12,39 @@ Requires Python 3.10-3.12, CadQuery >= 2.6.1.
 
 ## Usage
 
+Two converter functions are available:
+
+### `cadquery_to_pyg_simple` (recommended for manufacturing)
+
+Lightweight graph without B-spline data (control points, knots). Use for machined parts.
+
 ```python
 import cadquery as cq
-from cq2pyg import cadquery_to_pyg
+from cq2pyg import cadquery_to_pyg_simple
 
 box = cq.Workplane("XY").box(10, 10, 10)
+data = cadquery_to_pyg_simple(box)
+print(data)
+```
+
+```
+HeteroData(
+  vertex={ x=[8, 3] },
+  edge={ x=[12, 24] },
+  face={ x=[6, 34] },
+  (vertex, bounds, edge)={ edge_index=[2, 24] },
+  (edge, bounds, face)={ edge_index=[2, 24] },
+  (face, adjacent, face)={ edge_index=[2, 24] },
+)
+```
+
+### `cadquery_to_pyg` (full B-spline support)
+
+Complete graph with NURBS control points and knot vectors. Use for freeform surfaces.
+
+```python
+from cq2pyg import cadquery_to_pyg
+
 data = cadquery_to_pyg(box)
 print(data)
 ```
@@ -30,7 +58,8 @@ HeteroData(
   (vertex, bounds, edge)={ edge_index=[2, 24] },
   (edge, bounds, face)={ edge_index=[2, 24] },
   (face, adjacent, face)={ edge_index=[2, 24] },
-  ...
+  (control_point, controls, edge)={ edge_index=[2, 0] },
+  (control_point, controls, face)={ edge_index=[2, 0] },
 )
 ```
 

@@ -24,6 +24,67 @@ from .features import (
 )
 
 
+def _get_occ_shape(shape: Union[cq.Workplane, cq.Shape, TopoDS_Shape]) -> TopoDS_Shape:
+    """Extract TopoDS_Shape from various CadQuery input types."""
+    if isinstance(shape, cq.Workplane):
+        return shape.val().wrapped
+    elif isinstance(shape, cq.Shape):
+        return shape.wrapped
+    elif isinstance(shape, TopoDS_Shape):
+        return shape
+    else:
+        raise TypeError(f"Expected CadQuery Workplane, Shape, or TopoDS_Shape, got {type(shape)}")
+
+
+def cadquery_to_pyg_simple(shape: Union[cq.Workplane, cq.Shape, TopoDS_Shape]) -> HeteroData:
+    """
+    Convert a CadQuery shape to a simple PyG heterogeneous graph.
+
+    This version omits B-spline specific data (control points, knots, multiplicities).
+    Use this for manufacturing/machining parts that are primarily analytic surfaces.
+
+    Node types:
+        - 'vertex': Geometric vertices with (x, y, z) coordinates
+        - 'edge': Topological edges (curves) with type, orientation, and parameters
+        - 'face': Topological faces (surfaces) with type, orientation, and parameters
+
+    Edge types (relationships):
+        - ('vertex', 'bounds', 'edge'): Vertex is an endpoint of edge
+        - ('edge', 'bounds', 'face'): Edge is part of face boundary
+        - ('face', 'adjacent', 'face'): Faces share an edge
+
+    Args:
+        shape: A CadQuery Workplane, Shape, or raw TopoDS_Shape
+
+    Returns:
+        HeteroData graph containing topology and geometry (no B-spline data)
+    """
+    occ_shape = _get_occ_shape(shape)
+
+    # Extract topology
+    topo = extract_topology(occ_shape)
+
+    # Extract geometry for each entity
+    vertex_geoms = [extract_vertex_geometry(v) for v in topo.vertices]
+    edge_geoms = [extract_edge_geometry(e) for e in topo.edges]
+    face_geoms = [extract_face_geometry(f) for f in topo.faces]
+
+    # Build HeteroData
+    data = HeteroData()
+
+    # Node features
+    data['vertex'].x = build_vertex_features(vertex_geoms)
+    data['edge'].x = build_edge_features(edge_geoms)
+    data['face'].x = build_face_features(face_geoms)
+
+    # Topology edge indices
+    data['vertex', 'bounds', 'edge'].edge_index = build_edge_index(topo.vertex_to_edge)
+    data['edge', 'bounds', 'face'].edge_index = build_edge_index(topo.edge_to_face)
+    data['face', 'adjacent', 'face'].edge_index = build_edge_index(topo.face_to_face)
+
+    return data
+
+
 def cadquery_to_pyg(shape: Union[cq.Workplane, cq.Shape, TopoDS_Shape]) -> HeteroData:
     """
     Convert a CadQuery shape to a PyG heterogeneous graph.
@@ -49,15 +110,7 @@ def cadquery_to_pyg(shape: Union[cq.Workplane, cq.Shape, TopoDS_Shape]) -> Heter
     Returns:
         HeteroData graph containing all topology and geometry information
     """
-    # Handle different input types
-    if isinstance(shape, cq.Workplane):
-        occ_shape = shape.val().wrapped
-    elif isinstance(shape, cq.Shape):
-        occ_shape = shape.wrapped
-    elif isinstance(shape, TopoDS_Shape):
-        occ_shape = shape
-    else:
-        raise TypeError(f"Expected CadQuery Workplane, Shape, or TopoDS_Shape, got {type(shape)}")
+    occ_shape = _get_occ_shape(shape)
 
     # Extract topology
     topo = extract_topology(occ_shape)

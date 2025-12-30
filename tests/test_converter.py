@@ -7,7 +7,7 @@ import pytest
 import torch
 import cadquery as cq
 
-from cq2pyg import cadquery_to_pyg, CurveType, SurfaceType
+from cq2pyg import cadquery_to_pyg, cadquery_to_pyg_simple, CurveType, SurfaceType
 from cq2pyg.types import (
     VERTEX_FEATURE_DIM, EDGE_FEATURE_DIM, FACE_FEATURE_DIM, CONTROL_POINT_FEATURE_DIM,
     NUM_CURVE_TYPES, NUM_SURFACE_TYPES
@@ -595,6 +595,194 @@ class TestPlaneNormals:
             length = torch.norm(normal)
             if length > 0.001:  # Skip zero normals
                 assert abs(length - 1.0) < 0.01, f"Normal {i} has length {length}"
+
+
+class TestSimpleConverter:
+    """Test the simple converter (no B-spline data)."""
+
+    def test_simple_box(self):
+        """Test simple converter on a box."""
+        box = cq.Workplane("XY").box(10, 10, 10)
+        data = cadquery_to_pyg_simple(box)
+
+        # A box has 8 vertices, 12 edges, 6 faces
+        assert data['vertex'].x.shape[0] == 8
+        assert data['edge'].x.shape[0] == 12
+        assert data['face'].x.shape[0] == 6
+
+        # Check relationships exist
+        assert data['vertex', 'bounds', 'edge'].edge_index.shape[1] > 0
+        assert data['edge', 'bounds', 'face'].edge_index.shape[1] > 0
+        assert data['face', 'adjacent', 'face'].edge_index.shape[1] > 0
+
+    def test_simple_cylinder(self):
+        """Test simple converter on a cylinder."""
+        cylinder = cq.Workplane("XY").cylinder(10, 5)
+        data = cadquery_to_pyg_simple(cylinder)
+
+        # Check we have both plane and cylinder surfaces
+        face_types = data['face'].x[:, :SurfaceType.OTHER + 1].argmax(dim=1)
+        has_plane = (face_types == SurfaceType.PLANE).any()
+        has_cylinder = (face_types == SurfaceType.CYLINDER).any()
+        assert has_plane and has_cylinder
+
+    def test_simple_sphere(self):
+        """Test simple converter on a sphere."""
+        sphere = cq.Workplane("XY").sphere(5)
+        data = cadquery_to_pyg_simple(sphere)
+
+        assert data['face'].x.shape[0] == 1
+        face_types = data['face'].x[:, :SurfaceType.OTHER + 1].argmax(dim=1)
+        assert face_types[0] == SurfaceType.SPHERE
+
+    def test_simple_no_control_points(self):
+        """Test that simple converter has no control_point node type."""
+        box = cq.Workplane("XY").box(10, 10, 10)
+        data = cadquery_to_pyg_simple(box)
+
+        # Should not have control_point in node types
+        assert 'control_point' not in data.node_types
+
+    def test_simple_no_knots(self):
+        """Test that simple converter has no knots on edges."""
+        box = cq.Workplane("XY").box(10, 10, 10)
+        data = cadquery_to_pyg_simple(box)
+
+        # Should not have knots attribute
+        assert not hasattr(data['edge'], 'knots')
+        assert not hasattr(data['edge'], 'multiplicities')
+
+    def test_simple_no_face_knots(self):
+        """Test that simple converter has no knots on faces."""
+        box = cq.Workplane("XY").box(10, 10, 10)
+        data = cadquery_to_pyg_simple(box)
+
+        # Should not have u_knots, v_knots attributes
+        assert not hasattr(data['face'], 'u_knots')
+        assert not hasattr(data['face'], 'v_knots')
+        assert not hasattr(data['face'], 'u_multiplicities')
+        assert not hasattr(data['face'], 'v_multiplicities')
+
+    def test_simple_fillet_box(self):
+        """Test simple converter on a filleted box (has B-splines, but we ignore them)."""
+        box = cq.Workplane("XY").box(10, 10, 10).edges().fillet(1)
+        data = cadquery_to_pyg_simple(box)
+
+        # Should have more faces than a simple box due to fillets
+        assert data['face'].x.shape[0] > 6
+
+        # But no control points
+        assert 'control_point' not in data.node_types
+
+    def test_simple_loft(self):
+        """Test simple converter on a loft (has B-splines, but we ignore them)."""
+        loft = (
+            cq.Workplane("XY")
+            .rect(10, 10)
+            .workplane(offset=10)
+            .circle(5)
+            .loft()
+        )
+        data = cadquery_to_pyg_simple(loft)
+
+        # Should have faces
+        assert data['face'].x.shape[0] > 0
+
+        # But no control points or knots
+        assert 'control_point' not in data.node_types
+        assert not hasattr(data['edge'], 'knots')
+
+    def test_simple_workplane_input(self):
+        """Test simple converter with Workplane input."""
+        wp = cq.Workplane("XY").box(5, 5, 5)
+        data = cadquery_to_pyg_simple(wp)
+        assert data['vertex'].x.shape[0] == 8
+
+    def test_simple_shape_input(self):
+        """Test simple converter with Shape input."""
+        wp = cq.Workplane("XY").box(5, 5, 5)
+        shape = wp.val()
+        data = cadquery_to_pyg_simple(shape)
+        assert data['vertex'].x.shape[0] == 8
+
+    def test_simple_topodsshape_input(self):
+        """Test simple converter with TopoDS_Shape input."""
+        wp = cq.Workplane("XY").box(5, 5, 5)
+        occ_shape = wp.val().wrapped
+        data = cadquery_to_pyg_simple(occ_shape)
+        assert data['vertex'].x.shape[0] == 8
+
+    def test_simple_edge_indices_valid(self):
+        """Test that edge indices are valid in simple output."""
+        box = cq.Workplane("XY").box(10, 10, 10)
+        data = cadquery_to_pyg_simple(box)
+
+        # vertex-edge relationships
+        v_e_idx = data['vertex', 'bounds', 'edge'].edge_index
+        assert v_e_idx[0].max() < data['vertex'].x.shape[0]
+        assert v_e_idx[1].max() < data['edge'].x.shape[0]
+
+        # edge-face relationships
+        e_f_idx = data['edge', 'bounds', 'face'].edge_index
+        assert e_f_idx[0].max() < data['edge'].x.shape[0]
+        assert e_f_idx[1].max() < data['face'].x.shape[0]
+
+        # face-face adjacency
+        f_f_idx = data['face', 'adjacent', 'face'].edge_index
+        assert f_f_idx[0].max() < data['face'].x.shape[0]
+        assert f_f_idx[1].max() < data['face'].x.shape[0]
+
+    def test_simple_tensor_dtypes(self):
+        """Test that tensors have correct dtypes in simple output."""
+        box = cq.Workplane("XY").box(10, 10, 10)
+        data = cadquery_to_pyg_simple(box)
+
+        # Features should be float32
+        assert data['vertex'].x.dtype == torch.float32
+        assert data['edge'].x.dtype == torch.float32
+        assert data['face'].x.dtype == torch.float32
+
+        # Edge indices should be long
+        assert data['vertex', 'bounds', 'edge'].edge_index.dtype == torch.long
+        assert data['edge', 'bounds', 'face'].edge_index.dtype == torch.long
+
+    def test_simple_each_edge_has_vertices(self):
+        """Test that each edge has vertices in simple output."""
+        box = cq.Workplane("XY").box(10, 10, 10)
+        data = cadquery_to_pyg_simple(box)
+
+        v_e_idx = data['vertex', 'bounds', 'edge'].edge_index
+        num_edges = data['edge'].x.shape[0]
+
+        edges_with_vertices = set(v_e_idx[1].tolist())
+        assert len(edges_with_vertices) == num_edges
+
+    def test_simple_each_face_has_edges(self):
+        """Test that each face has edges in simple output."""
+        box = cq.Workplane("XY").box(10, 10, 10)
+        data = cadquery_to_pyg_simple(box)
+
+        e_f_idx = data['edge', 'bounds', 'face'].edge_index
+        num_faces = data['face'].x.shape[0]
+
+        for face_idx in range(num_faces):
+            edges_for_face = (e_f_idx[1] == face_idx).sum()
+            assert edges_for_face >= 3, f"Face {face_idx} has only {edges_for_face} edges"
+
+    def test_simple_face_adjacency_symmetric(self):
+        """Test that face adjacency is symmetric in simple output."""
+        box = cq.Workplane("XY").box(10, 10, 10)
+        data = cadquery_to_pyg_simple(box)
+
+        f_f_idx = data['face', 'adjacent', 'face'].edge_index
+
+        edges_set = set()
+        for i in range(f_f_idx.shape[1]):
+            a, b = f_f_idx[0, i].item(), f_f_idx[1, i].item()
+            edges_set.add((a, b))
+
+        for a, b in list(edges_set):
+            assert (b, a) in edges_set, f"Missing reverse edge ({b}, {a})"
 
 
 if __name__ == "__main__":
